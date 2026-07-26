@@ -6,6 +6,7 @@
   "directories": {
     "output": "/tmp/opencode-release"
   },
+  "publish": null,
   "files": [
     "dist/**/*",
     "dist-electron/**/*",
