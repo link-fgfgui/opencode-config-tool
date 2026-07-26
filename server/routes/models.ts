@@ -14,12 +14,20 @@ const buildCommandEnv = (): NodeJS.ProcessEnv => {
   // Add opencode's default installation path
   extraPaths.push(path.join(os.homedir(), '.opencode', 'bin'));
 
-  if (process.platform === 'darwin') {
-    extraPaths.push('/usr/local/bin', '/opt/homebrew/bin', '/opt/homebrew/sbin');
+  if (process.platform === 'win32') {
+    // npm 全局 bin 目录（opencode 通常通过 `npm i -g opencode` 安装为 .cmd 垫片）
+    const appData = process.env.APPDATA;
+    if (appData) {
+      extraPaths.push(path.join(appData, 'npm'));
+    }
+    // bun 全局安装目录（opencode-ai 包内含可执行入口）
+    extraPaths.push(path.join(os.homedir(), '.bun', 'install', 'global', 'node_modules', 'opencode-ai', 'bin'));
+  } else {
+    extraPaths.push(path.join(os.homedir(), '.local', 'bin'));
   }
 
-  if (process.platform !== 'win32') {
-    extraPaths.push(path.join(os.homedir(), '.local', 'bin'));
+  if (process.platform === 'darwin') {
+    extraPaths.push('/usr/local/bin', '/opt/homebrew/bin', '/opt/homebrew/sbin');
   }
 
   if (extraPaths.length > 0) {
@@ -62,9 +70,13 @@ async function runOpencodeModels(provider?: string): Promise<string> {
   for (const { command, args: cmdArgs } of commands) {
     try {
       const result = await execFileAsync(command, cmdArgs, {
-        timeout: 15000,
+        timeout: 60000,
         maxBuffer: 1024 * 1024,
         env: buildCommandEnv(),
+        // Windows 上 opencode 通过 npm/bun 全局安装为 .cmd 垫片，
+        // Node.js 自 CVE-2024-27980 修复后禁止 execFile 直接执行 .cmd/.bat，
+        // 必须显式 shell:true 才能拉起。
+        shell: process.platform === 'win32',
       });
       return result.stdout || '';
     } catch (error) {

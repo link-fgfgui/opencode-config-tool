@@ -1,15 +1,51 @@
 name: release
 
+# 每次 push 到主分支时自动构建三平台产物并上传到一个自动生成的 prerelease。
+# 也可通过 Actions 页面手动触发。
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  # 先创建 Release（生成唯一 tag），后续 build job 都往这个 Release 上传产物。
+  create-release:
+    name: Create release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Collect metadata
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          echo "tag=v${VERSION}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Create prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Build ${{ steps.meta.outputs.tag }}
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            Automated build from push ${{ github.sha }}
+
+            - Branch: ${{ github.ref_name }}
+            - Commit: ${{ github.event.head_commit.message }}
+
+            > 此 Release 由 push 自动触发构建，产物未经人工验证。
+
   build:
     name: build (${{ matrix.os }})
+    needs: create-release
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -52,6 +88,7 @@ jobs:
         if: runner.os == 'macOS'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.create-release.outputs.tag }}
           files: |
             /tmp/opencode-release/*.dmg
             /tmp/opencode-release/*.zip
@@ -60,6 +97,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.create-release.outputs.tag }}
           files: |
             C:\\tmp\\opencode-release\\*.exe
 
@@ -67,6 +105,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.create-release.outputs.tag }}
           files: |
             /tmp/opencode-release/*.AppImage
             /tmp/opencode-release/*.deb
